@@ -128,7 +128,10 @@ int main()
 
     while (read(kfd, &ev, sizeof(ev)) > 0)
     {
-        if (ev.type != EV_KEY) continue;
+        if (ev.type != EV_KEY)
+        {
+            continue;
+        }
 
         // Toggle Shift Mode
         if (ev.code == SHIFT_KEY)
