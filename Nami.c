@@ -117,7 +117,7 @@ int find_dongle_keyboard()
         char path[64];
         snprintf(path, sizeof(path), "/dev/input/%s", entry->d_name);
 
-        int fd = open(path, O_RDONLY | O_NONBLOCK);
+        int fd = open(path, O_RDONLY);
         if (fd < 0) continue;
 
         // Skip own virtual device
@@ -164,7 +164,7 @@ int find_dongle_keyboard()
 int main()
 {
     int ufd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
-    // int kfd = open("/dev/input/event3", O_RDONLY); // Note: verify your event ID
+    // int kfd = open("/dev/input/event3", O_RDONLY);
     int kfd = find_dongle_keyboard();
 
     if (ufd < 0 || kfd < 0) return perror("Open failed"), 1;
