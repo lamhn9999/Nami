@@ -7,6 +7,8 @@
 #include <sys/ioctl.h>
 #include <sys/time.h>
 #include <stdbool.h>
+#include <dirent.h>
+#include <stdint.h>
 
 /** Configuration **/
 #define SHIFT_KEY KEY_CAPSLOCK
@@ -99,10 +101,71 @@ void perform_movement(int ufd)
     sync_report(ufd);
 }
 
+// Returns an open fd to the first USB dongle keyboard found, or -1 if none.
+int find_dongle_keyboard()
+{
+    DIR *dir = opendir("/dev/input");
+    if (!dir) { perror("opendir /dev/input"); return -1; }
+
+    int result = -1;
+    struct dirent *entry;
+
+    while ((entry = readdir(dir)) != NULL && result < 0)
+    {
+        if (strncmp(entry->d_name, "event", 5) != 0) continue;
+
+        char path[64];
+        snprintf(path, sizeof(path), "/dev/input/%s", entry->d_name);
+
+        int fd = open(path, O_RDONLY);
+        if (fd < 0) continue;
+
+        // Skip own virtual device
+        char name[256] = "";
+        ioctl(fd, EVIOCGNAME(sizeof(name)), name);
+        if (strcmp(name, "Nami-Pro-Mouse") == 0) { close(fd); continue; }
+
+        // Must be USB (dongle receiver shows as BUS_USB)
+        struct input_id id = {0};
+        if (ioctl(fd, EVIOCGID, &id) < 0 || id.bustype != BUS_USB)
+        {
+            close(fd);
+            continue;
+        }
+
+        // Must support EV_KEY
+        uint8_t evbits[(EV_MAX + 7) / 8] = {0};
+        if (ioctl(fd, EVIOCGBIT(0, sizeof(evbits)), evbits) < 0 ||
+            !(evbits[EV_KEY / 8] & (1 << (EV_KEY % 8))))
+        {
+            close(fd);
+            continue;
+        }
+
+        // Must have letter keys (rules out mice/joysticks on USB)
+        uint8_t keybits[(KEY_MAX + 7) / 8] = {0};
+        if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybits)), keybits) < 0 ||
+            !(keybits[KEY_A / 8] & (1 << (KEY_A % 8))))
+        {
+            close(fd);
+            continue;
+        }
+
+        printf("Dongle keyboard: %s (%s) vendor=%04x product=%04x\n",
+               path, name, id.vendor, id.product);
+        result = fd;
+    }
+
+    closedir(dir);
+    if (result < 0) fprintf(stderr, "No dongle keyboard found\n");
+    return result;
+}
+
 int main()
 {
     int ufd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
-    int kfd = open("/dev/input/event3", O_RDONLY); // Note: verify your event ID
+    // int kfd = open("/dev/input/event3", O_RDONLY);
+    int kfd = find_dongle_keyboard();
 
     if (ufd < 0 || kfd < 0) return perror("Open failed"), 1;
 
